@@ -1,26 +1,225 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: #0a0a0a;
+  --color-foreground: #f4f6fa;
+  --color-surface: #0f0f12;
+  --color-surface-2: #141418;
+  --color-line: rgba(244, 246, 250, 0.07);
+  --color-accent: #d4f34a;
+  --color-accent-soft: rgba(212, 243, 74, 0.12);
+  --color-dim: #7c8492;
+
+  --font-display: var(--font-syne), sans-serif;
+  --font-body: var(--font-jakarta), sans-serif;
+
+  --animate-marquee: marquee 30s linear infinite;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes kenburns {
+  from { transform: scale(1.08); }
+  to { transform: scale(1); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  50% { transform: translateX(6px); }
+  75% { transform: translateX(-4px); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* ───────── Lenis ───────── */
+html {
+  scroll-behavior: initial;
+}
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* ───────── Base ───────── */
+body {
+  background: #0a0a0a;
+  color: #f4f6fa;
+  font-family: var(--font-jakarta), sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: #d4f34a;
+  color: #0a0a0a;
+}
+
+/* ───────── Scrollbar ───────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 243, 74, 0.2);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 243, 74, 0.4);
+}
+
+/* ───────── Noise overlay ───────── */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ───────── Glass ───────── */
+.glass {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-strong {
+  background: rgba(14, 14, 18, 0.75);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+/* ───────── Typography ───────── */
+.text-stroke {
+  -webkit-text-stroke: 1px rgba(244, 246, 250, 0.32);
+  color: transparent;
+}
+
+.text-gradient {
+  background: linear-gradient(120deg, #f4f6fa 15%, #8a909e 50%, #f4f6fa 85%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ───────── Accents & glows ───────── */
+.accent-glow {
+  box-shadow: 0 0 60px -10px rgba(212, 243, 74, 0.45);
+}
+
+.hover-halo {
+  position: relative;
+  transition: box-shadow 0.6s cubic-bezier(0.32, 0.72, 0, 1),
+              border-color 0.6s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.hover-halo:hover {
+  box-shadow: 0 0 60px -16px rgba(212, 243, 74, 0.3);
+  border-color: rgba(212, 243, 74, 0.3);
+}
+
+/* ───────── Media cards ───────── */
+.media-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: #0f0f12;
+}
+
+.media-card img,
+.media-card video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 1.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.media-card:hover img,
+.media-card:hover video {
+  transform: scale(1.05);
+}
+
+/* ───────── Grain vignette ───────── */
+.grain-vignette {
+  background:
+    radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%),
+    linear-gradient(to bottom, rgba(0,0,0,0.45), transparent 35%, transparent 65%, rgba(0,0,0,0.7));
+}
+
+/* ───────── Cursor ───────── */
+.cursor-none,
+.cursor-none * {
+  cursor: none !important;
+}
+
+@media (pointer: coarse) {
+  .cursor-none,
+  .cursor-none * {
+    cursor: auto !important;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ───────── Range slider (before/after) ───────── */
+input[type="range"].dragger {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+input[type="range"].dragger::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 56px;
+  height: 100%;
+  cursor: grab;
+}
+input[type="range"].dragger:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+input[type="range"].dragger::-moz-range-thumb {
+  width: 56px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  cursor: grab;
+}
+
+/* ───────── Dashboard chart ───────── */
+.chart-bar {
+  transform-origin: bottom;
+}
+
+/* ───────── Responsive utilities ───────── */
+@media (max-width: 768px) {
+  .media-card {
+    border-radius: 1rem;
+  }
+}
+
+/* ───────── Custom border colors ───────── */
+.border-white\/8 {
+  border-color: rgba(255, 255, 255, 0.08);
 }
