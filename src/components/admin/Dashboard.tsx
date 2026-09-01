@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Users,
   CalendarDays,
@@ -9,6 +9,10 @@ import {
   Clapperboard,
   Trash2,
   Mail,
+  CloudUpload,
+  Loader2,
+  CheckCircle2,
+  ExternalLink,
 } from "lucide-react";
 import { getStats, resetStats } from "@/lib/analytics";
 import {
@@ -16,10 +20,15 @@ import {
   getQuotes,
   deleteQuote,
 } from "@/lib/store";
-import type { AnalyticsRecord, EventItem, QuoteRequest } from "@/lib/types";
+import {
+  uploadMediaToCloudinary,
+  getCloudinaryPortfolioMedia,
+  CLOUDINARY_CONFIG,
+} from "@/lib/cloudinary";
+import type { AnalyticsRecord, EventItem, EventMedia, QuoteRequest } from "@/lib/types";
 import EventManager from "./EventManager";
 
-type Tab = "stats" | "events" | "quotes";
+type Tab = "stats" | "events" | "cloudinary" | "quotes";
 
 export default function Dashboard() {
   const [tab, setTab] = useState<Tab>("stats");
@@ -69,6 +78,7 @@ export default function Dashboard() {
   const navItems = [
     { id: "stats" as Tab, label: "Statistiques", icon: Users },
     { id: "events" as Tab, label: "Événements", icon: ImageIcon },
+    { id: "cloudinary" as Tab, label: "Cloudinary HD", icon: CloudUpload },
     { id: "quotes" as Tab, label: "Demandes", icon: Mail },
   ];
 
@@ -78,7 +88,7 @@ export default function Dashboard() {
         <div>
           <h1 className="font-display text-3xl font-extrabold">Dashboard</h1>
           <p className="mt-1 text-sm text-dim">
-            Pilotage du site — statistiques, événements et demandes de devis.
+            Pilotage du site — statistiques, événements, upload Cloudinary et demandes de devis.
           </p>
         </div>
         <button
@@ -209,6 +219,8 @@ export default function Dashboard() {
         />
       )}
 
+      {tab === "cloudinary" && <CloudinaryDirectManager />}
+
       {tab === "quotes" && (
         <div className="space-y-4">
           <h3 className="font-display text-lg font-bold">Demandes de devis reçues</h3>
@@ -281,6 +293,204 @@ export default function Dashboard() {
         </div>
       )}
     </main>
+  );
+}
+
+function CloudinaryDirectManager() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [cloudMedia, setCloudMedia] = useState<EventMedia[]>([]);
+  const [loadingMedia, setLoadingMedia] = useState(true);
+  const [status, setStatus] = useState<{
+    isUploading: boolean;
+    currentFile: string;
+    message: string;
+    percent: number;
+    error: string;
+  }>({
+    isUploading: false,
+    currentFile: "",
+    message: "",
+    percent: 0,
+    error: "",
+  });
+
+  const loadMedia = () => {
+    setLoadingMedia(true);
+    getCloudinaryPortfolioMedia()
+      .then(setCloudMedia)
+      .finally(() => setLoadingMedia(false));
+  };
+
+  useEffect(() => {
+    loadMedia();
+  }, []);
+
+  const handleSelectFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      setStatus({
+        isUploading: true,
+        currentFile: file.name,
+        message: `Prise en charge de "${file.name}" (${i + 1}/${fileArray.length})...`,
+        percent: Math.round(((i + 0.1) / fileArray.length) * 100),
+        error: "",
+      });
+
+      try {
+        await uploadMediaToCloudinary(file, (st) => {
+          const stepPercent = Math.round(
+            ((i + (st.progressPercent ? st.progressPercent / 100 : 0.5)) / fileArray.length) * 100
+          );
+          setStatus({
+            isUploading: true,
+            currentFile: file.name,
+            message: st.message,
+            percent: Math.min(100, stepPercent),
+            error: "",
+          });
+        });
+      } catch (err) {
+        console.error(err);
+        setStatus((prev) => ({
+          ...prev,
+          error: `Erreur d'envoi pour "${file.name}".`,
+        }));
+      }
+    }
+
+    setStatus({
+      isUploading: false,
+      currentFile: "",
+      message: "Tous les fichiers ont été envoyés vers Cloudinary !",
+      percent: 100,
+      error: "",
+    });
+
+    loadMedia();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="glass-strong rounded-3xl p-6 sm:p-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div>
+            <h2 className="font-display text-xl font-bold flex items-center gap-2">
+              <CloudUpload className="text-accent" size={22} /> Upload Direct Cloudinary HD
+            </h2>
+            <p className="mt-1 text-sm text-dim">
+              Envoyer des photos (60 Mo - 300 Mo+ compressées WebP client) et des vidéos directement vers Cloudinary.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-dim">
+            <span>Preset: <strong className="text-accent">{CLOUDINARY_CONFIG.uploadPreset}</strong></span>
+            <span>·</span>
+            <span>Tag: <strong className="text-accent">{CLOUDINARY_CONFIG.tag}</strong></span>
+          </div>
+        </div>
+
+        <div
+          onClick={() => fileRef.current?.click()}
+          className="group flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-white/20 p-8 text-center transition-all hover:border-accent hover:bg-accent/5"
+        >
+          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent transition-transform group-hover:scale-110">
+            <CloudUpload size={28} />
+          </div>
+          <p className="text-sm font-bold">Clique ici ou glisse tes photos & vidéos</p>
+          <p className="mt-1 text-xs text-dim">
+            Photos HD (60 Mo à 300 Mo+) converties automatiquement en WebP HD (2560px, qual. 85%) avant l'envoi réseau.
+          </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            className="hidden"
+            onChange={(e) => handleSelectFiles(e.target.files)}
+          />
+        </div>
+
+        {status.isUploading && (
+          <div className="mt-4 rounded-2xl border border-accent/40 bg-accent/10 p-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-accent shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between text-xs font-bold text-accent">
+                  <span className="truncate">{status.currentFile}</span>
+                  <span>{status.percent}%</span>
+                </div>
+                <p className="mt-1 text-xs text-foreground/90">{status.message}</p>
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full bg-accent transition-all duration-300"
+                    style={{ width: `${status.percent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {status.message && !status.isUploading && (
+          <div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs font-semibold text-emerald-400">
+            <CheckCircle2 size={16} /> {status.message}
+          </div>
+        )}
+
+        {status.error && (
+          <div className="mt-4 rounded-2xl border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-400">
+            {status.error}
+          </div>
+        )}
+      </div>
+
+      <div className="glass-strong rounded-3xl p-6 sm:p-8">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-display text-lg font-bold">Médias publiés sur Cloudinary ({cloudMedia.length})</h3>
+          <button
+            onClick={loadMedia}
+            className="text-xs text-accent hover:underline flex items-center gap-1"
+          >
+            Actualiser
+          </button>
+        </div>
+
+        {loadingMedia ? (
+          <div className="flex h-32 items-center justify-center text-xs text-dim">
+            <Loader2 className="animate-spin mr-2" size={16} /> Chargement de la galerie Cloudinary...
+          </div>
+        ) : cloudMedia.length === 0 ? (
+          <div className="flex h-32 items-center justify-center text-xs text-dim border border-dashed border-white/10 rounded-2xl">
+            Aucun média sur Cloudinary avec le tag portfolio_client_1.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+            {cloudMedia.map((m) => (
+              <a
+                key={m.id}
+                href={m.src}
+                target="_blank"
+                rel="noreferrer"
+                className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-black"
+              >
+                {m.kind === "video" ? (
+                  <div className="flex h-full w-full items-center justify-center text-accent bg-black/60">
+                    <Clapperboard size={24} />
+                  </div>
+                ) : (
+                  <img src={m.src} alt={m.caption} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                )}
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                  <ExternalLink size={16} />
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

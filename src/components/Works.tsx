@@ -4,14 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Clapperboard, X, ChevronLeft, ChevronRight, Plus, Heart } from "lucide-react";
 import { gsap } from "@/lib/gsap";
 import { getEvents } from "@/lib/store";
+import { getCloudinaryPortfolioMedia } from "@/lib/cloudinary";
 import type { EventItem } from "@/lib/types";
 
 type Filter = "all" | "photo" | "video";
 
-const CATEGORIES = ["all", "Miss Togo", "Mode", "Portrait", "Mariage", "Corporate", "Concert"] as const;
+const CATEGORIES = ["all", "Portfolio Cloudinary", "Miss Togo", "Mode", "Portrait", "Mariage", "Corporate", "Concert"] as const;
 
 const LABELS: Record<string, { fr: string; en: string }> = {
   all: { fr: "Tout", en: "All" },
+  "Portfolio Cloudinary": { fr: "Cloudinary HD", en: "Cloudinary HD" },
   "Miss Togo": { fr: "Miss Togo", en: "Miss Togo" },
   Mode: { fr: "Mode", en: "Fashion" },
   Portrait: { fr: "Portrait", en: "Portrait" },
@@ -37,8 +39,30 @@ export default function Works() {
 
   useEffect(() => {
     let cancelled = false;
-    getEvents().then((list) => {
-      if (!cancelled) setEvents(list);
+    Promise.all([getEvents(), getCloudinaryPortfolioMedia()]).then(([list, cMedia]) => {
+      if (cancelled) return;
+      if (cMedia && cMedia.length > 0) {
+        const existingSrcs = new Set(list.flatMap((e) => e.media.map((m) => m.src)));
+        const unassignedCloudinary = cMedia.filter((m) => !existingSrcs.has(m.src));
+
+        if (unassignedCloudinary.length > 0) {
+          const coverMedia = unassignedCloudinary.find((m) => m.kind === "photo") || unassignedCloudinary[0];
+          const cloudEvent: EventItem = {
+            id: "cloudinary-dynamic-portfolio",
+            title: "Réalisations Cloudinary HD",
+            category: "Portfolio Cloudinary",
+            location: "Lomé, Togo",
+            date: new Date().getFullYear().toString(),
+            description: "Portfolio dynamique synchronisé directement depuis Cloudinary (Photos WebP HD & Vidéos).",
+            cover: coverMedia ? coverMedia.src : "",
+            media: unassignedCloudinary,
+            featured: true,
+          };
+          setEvents([cloudEvent, ...list]);
+          return;
+        }
+      }
+      setEvents(list);
     });
     const ctx = gsap.context(() => {
       gsap.utils.toArray<HTMLElement>("[data-work-card]").forEach((el, i) => {

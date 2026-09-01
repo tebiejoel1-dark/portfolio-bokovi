@@ -13,6 +13,8 @@ import {
   Save,
   X,
   Clapperboard,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import {
   saveEvent,
@@ -23,6 +25,7 @@ import {
   saveCustomMedia,
   removeCustomMedia,
 } from "@/lib/store";
+import { uploadMediaToCloudinary } from "@/lib/cloudinary";
 import { CATEGORIES } from "@/lib/types";
 import type { EventItem, EventMedia, Category } from "@/lib/types";
 
@@ -175,8 +178,17 @@ function EventEditor({
   bump: () => void;
 }) {
   const [draft, setDraft] = useState<EventItem>(event);
-  const [uploads, setUploads] = useState<{ pending: EventMedia[]; error: string }>({
-    pending: [],
+  const [uploadStatus, setUploadStatus] = useState<{
+    isUploading: boolean;
+    currentFile: string;
+    message: string;
+    percent: number;
+    error: string;
+  }>({
+    isUploading: false,
+    currentFile: "",
+    message: "",
+    percent: 0,
     error: "",
   });
   const fileRef = useRef<HTMLInputElement>(null);
@@ -185,44 +197,68 @@ function EventEditor({
   const set = (patch: Partial<EventItem>) => setDraft((d) => ({ ...d, ...patch }));
 
   const handleFiles = async (files: FileList | null) => {
-    if (!files) return;
-    const pending: EventMedia[] = [];
-    for (const file of Array.from(files)) {
-      const limit = file.type.startsWith("video") ? 8 : 6;
-      if (file.size > limit * 1024 * 1024) {
-        setUploads((u) => ({
-          ...u,
-          error: `« ${file.name} » dépasse ${limit} Mo. Compresse-le avant l'ajout (astuce : réduire à 1600px).`,
-        }));
-        continue;
-      }
+    if (!files || files.length === 0) return;
+    const pendingList: EventMedia[] = [];
+    const fileArray = Array.from(files);
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      setUploadStatus({
+        isUploading: true,
+        currentFile: file.name,
+        message: `Prise en charge de "${file.name}" (${i + 1}/${fileArray.length})...`,
+        percent: Math.round(((i + 0.1) / fileArray.length) * 100),
+        error: "",
+      });
+
       try {
-        const media = await mediaToEventMedia(file);
-        pending.push(media);
-        const saved = saveCustomMedia(media.id, {
-          dataUrl: media.src,
-          kind: media.kind,
-          name: media.caption || "Média",
+        const result = await uploadMediaToCloudinary(file, (st) => {
+          const stepPercent =
+            Math.round(((i + (st.progressPercent ? st.progressPercent / 100 : 0.5)) / fileArray.length) * 100);
+          setUploadStatus({
+            isUploading: true,
+            currentFile: file.name,
+            message: st.message,
+            percent: Math.min(100, stepPercent),
+            error: "",
+          });
         });
-        if (!saved) {
-          setUploads((u) => ({
-            ...u,
-            error:
-              "Stockage du navigateur saturé : supprime d'anciens médias pour ajouter celui-ci.",
-          }));
-          pending.pop();
-        }
-      } catch {
-        setUploads((u) => ({ ...u, error: "Fichier illisible, réessaie." }));
+
+        const newMedia: EventMedia = {
+          id: result.publicId,
+          kind: result.kind,
+          src: result.url,
+          caption: file.name,
+        };
+
+        pendingList.push(newMedia);
+        saveCustomMedia(result.publicId, {
+          dataUrl: result.url,
+          kind: result.kind,
+          name: file.name,
+        });
+      } catch (err) {
+        console.error("Erreur d'envoi Cloudinary:", err);
+        setUploadStatus((prev) => ({
+          ...prev,
+          error: `Échec d'envoi pour "${file.name}". Vérifie le réseau.`,
+        }));
       }
     }
-    setUploads((u) => ({ ...u, pending: [...u.pending, ...pending] }));
-    bump();
-  };
 
-  const addUploads = () => {
-    setDraft((d) => ({ ...d, media: [...d.media, ...uploads.pending] }));
-    setUploads({ pending: [], error: "" });
+    if (pendingList.length > 0) {
+      setDraft((d) => ({ ...d, media: [...d.media, ...pendingList] }));
+    }
+
+    setUploadStatus({
+      isUploading: false,
+      currentFile: "",
+      message: "Téléversement terminé avec succès !",
+      percent: 100,
+      error: "",
+    });
+
+    bump();
   };
 
   const removeMedia = (id: string) => {
@@ -249,7 +285,7 @@ function EventEditor({
       cover: draft.cover || draft.media.find((m) => m.kind === "photo")?.src || "",
     };
     if (!final.cover) {
-      setUploads((u) => ({ ...u, error: "Ajoute au moins une photo pour servir de couverture." }));
+      setUploadStatus((prev) => ({ ...prev, error: "Ajoute au moins une photo pour servir de couverture." }));
       return;
     }
     saveEvent(final).then(onSave);
@@ -340,27 +376,30 @@ function EventEditor({
               />
             </div>
 
-            {uploads.pending.length > 0 && (
-              <div className="mb-3 rounded-2xl border border-accent/30 bg-accent/10 p-3">
-                <div className="mb-2 text-xs font-semibold text-accent">
-                  {uploads.pending.length} nouveau(x) média(x) prêt(s) à publier
+            {uploadStatus.isUploading && (
+              <div className="mb-4 rounded-2xl border border-accent/40 bg-accent/10 p-4 backdrop-blur-md">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-5 w-5 animate-spin text-accent shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between text-xs font-bold text-accent">
+                      <span className="truncate">{uploadStatus.currentFile || "Traitement en cours..."}</span>
+                      <span>{uploadStatus.percent}%</span>
+                    </div>
+                    <p className="mt-1 text-xs text-foreground/90 leading-tight">{uploadStatus.message}</p>
+                    <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full bg-accent transition-all duration-300"
+                        style={{ width: `${uploadStatus.percent}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <button
-                  onClick={addUploads}
-                  className="rounded-full bg-accent px-4 py-1.5 text-xs font-bold text-black"
-                >
-                  Ajouter au site
-                </button>
-                <button
-                  onClick={() => setUploads({ pending: [], error: "" })}
-                  className="ml-2 rounded-full border border-white/20 px-4 py-1.5 text-xs text-dim"
-                >
-                  Annuler
-                </button>
               </div>
             )}
-            {uploads.error && (
-              <p className="mb-3 text-xs text-red-400">{uploads.error}</p>
+            {uploadStatus.error && (
+              <div className="mb-4 rounded-2xl border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-400">
+                {uploadStatus.error}
+              </div>
             )}
 
             {draft.media.length === 0 ? (
