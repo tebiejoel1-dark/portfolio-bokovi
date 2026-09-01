@@ -41,54 +41,56 @@ function getLocalEvents(): EventItem[] {
 const ADMIN_HEADERS = { "x-admin-code": ADMIN_CODE };
 
 export async function getEvents(): Promise<EventItem[]> {
+  const localEvents = getLocalEvents();
   try {
     const res = await fetch("/api/events", { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.events) && data.events.length > 0) {
-        return data.events;
+        const mergedMap = new Map<string, EventItem>();
+        data.events.forEach((e: EventItem) => mergedMap.set(e.id, e));
+        localEvents.forEach((e: EventItem) => mergedMap.set(e.id, e));
+        return Array.from(mergedMap.values());
       }
     }
   } catch {
     /* serveur indisponible — repli local */
   }
-  return getLocalEvents();
+  return localEvents;
 }
 
 export async function saveEvent(event: EventItem) {
-  try {
-    const res = await fetch("/api/events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...ADMIN_HEADERS },
-      body: JSON.stringify(event),
-    });
-    if (res.ok) return true;
-  } catch {
-    /* repli local */
-  }
   const events = getLocalEvents();
   const idx = events.findIndex((e) => e.id === event.id);
   if (idx >= 0) events[idx] = event;
   else events.unshift(event);
   write(EVENTS_KEY, events);
-  return false;
-}
 
-export async function deleteEvent(id: string) {
   try {
-    const res = await fetch(`/api/events/${id}`, {
-      method: "DELETE",
-      headers: ADMIN_HEADERS,
+    await fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...ADMIN_HEADERS },
+      body: JSON.stringify(event),
     });
-    if (res.ok) return true;
   } catch {
     /* repli local */
   }
-  write(
-    EVENTS_KEY,
-    getLocalEvents().filter((e) => e.id !== id),
-  );
-  return false;
+  return true;
+}
+
+export async function deleteEvent(id: string) {
+  const remaining = getLocalEvents().filter((e) => e.id !== id);
+  write(EVENTS_KEY, remaining);
+
+  try {
+    await fetch(`/api/events/${id}`, {
+      method: "DELETE",
+      headers: ADMIN_HEADERS,
+    });
+  } catch {
+    /* repli local */
+  }
+  return true;
 }
 
 export function createEventId() {
