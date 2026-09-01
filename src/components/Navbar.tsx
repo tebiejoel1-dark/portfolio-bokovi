@@ -34,6 +34,25 @@ export default function Navbar() {
   const [shake, setShake] = useState(false);
   const [lang, setLang] = useState<Lang>("fr");
   const inputRef = useRef<HTMLInputElement>(null);
+  const tapCountRef = useRef<number>(0);
+  const tapTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleLogoClick = () => {
+    tapCountRef.current += 1;
+    if (tapCountRef.current >= 3) {
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+      tapCountRef.current = 0;
+      router.push("/admin");
+      return;
+    }
+
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    tapTimerRef.current = setTimeout(() => {
+      tapCountRef.current = 0;
+    }, 800);
+
+    go("hero");
+  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -86,8 +105,9 @@ export default function Navbar() {
           {/* Logo */}
           <button
             id="nav-logo"
-            onClick={() => go("hero")}
-            className="font-display text-xl font-extrabold tracking-tight"
+            onClick={handleLogoClick}
+            className="font-display text-xl font-extrabold tracking-tight transition-transform active:scale-95"
+            title="3 clics pour ouvrir l'Espace Pro"
           >
             BOKOVI<span className="text-accent">.</span>
           </button>
@@ -183,12 +203,6 @@ export default function Navbar() {
                 OK
               </button>
             </div>
-            <p className="mt-2 text-[11px] text-dim">
-              {lang === "fr"
-                ? <>Conseil : saisis <span className="text-accent">{ADMIN_CODE}</span> pour ouvrir le dashboard pro.</>
-                : <>Tip: type <span className="text-accent">{ADMIN_CODE}</span> to open the pro dashboard.</>
-              }
-            </p>
           </div>
         )}
       </header>

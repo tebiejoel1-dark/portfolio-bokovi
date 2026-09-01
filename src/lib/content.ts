@@ -257,6 +257,8 @@ export const PROFILE = {
   phone: "+228 92 29 28 31",
   whatsapp: "22892292831",
   email: "angedmirable@gmail.com",
+  facebook: "https://www.facebook.com/share/1EpMWSRY3c/?mibextid=wwXIfr",
+  tiktok: "https://www.tiktok.com/@licht_visual?_r=1&_t=ZS-99NA0BtG6pJ",
   bio: "Photographe et créateur de contenu professionnel basé à Lomé, Togo. Photographe & Vidéaste Officiel de Moov Africa Togo et fondateur de Licht-Frame Studio. Spécialisé en couverture événementielle institutionnelle, shooting de campagne et direction artistique.",
   bioEn: "Professional photographer and content creator based in Lomé, Togo. Official Photographer & Videographer of Moov Africa Togo and founder of Licht-Frame Studio. Specializing in institutional event coverage, campaign shoots and art direction.",
   experience: [

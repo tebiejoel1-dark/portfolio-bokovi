@@ -53,20 +53,38 @@ export default function Footer() {
             </p>
             <p className="mt-1 text-xs text-dim">{PROFILE.location}</p>
 
-            <div className="mt-5 flex gap-3">
+            <div className="mt-5 flex flex-wrap gap-2">
               <a
                 href={`https://wa.me/${PROFILE.whatsapp}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 id="footer-whatsapp"
-                className="rounded-full border border-white/10 px-4 py-2 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-accent"
+                className="rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-accent"
               >
                 WhatsApp
               </a>
               <a
+                href={PROFILE.facebook}
+                target="_blank"
+                rel="noopener noreferrer"
+                id="footer-facebook"
+                className="rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-accent"
+              >
+                Facebook
+              </a>
+              <a
+                href={PROFILE.tiktok}
+                target="_blank"
+                rel="noopener noreferrer"
+                id="footer-tiktok"
+                className="rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-accent"
+              >
+                TikTok
+              </a>
+              <a
                 href={`mailto:${PROFILE.email}`}
                 id="footer-email"
-                className="rounded-full border border-white/10 px-4 py-2 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-accent"
+                className="rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-accent"
               >
                 Email
               </a>
