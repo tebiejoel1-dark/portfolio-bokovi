@@ -177,56 +177,20 @@ function EventEditor({
   const set = (patch: Partial<EventItem>) => setDraft((d) => ({ ...d, ...patch }));
 
   /**
-   * Sélection des fichiers : prévisualisation locale instantanée & compression d'image client WebP
+   * Sélection des fichiers : PRÉVISUALISATION LOCALE INSTANTANÉE (0ms lag!)
    */
-  const handleFiles = async (files: FileList | null) => {
+  const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const fileArray = Array.from(files);
-    const newPending: File[] = [...pendingFiles];
-    const previewItems: EventMedia[] = [];
+    const newPending: File[] = [...pendingFiles, ...fileArray];
 
-    for (let i = 0; i < fileArray.length; i++) {
-      const file = fileArray[i];
-      let processedFile = file;
-
-      if (file.type.startsWith("image/")) {
-        setUploadStatus({
-          isUploading: true,
-          currentFile: file.name,
-          message: `Compression rapide client WebP de "${file.name}"...`,
-          percent: 20,
-          error: "",
-        });
-
-        try {
-          const imageCompressionModule = await import("browser-image-compression");
-          const imageCompression = imageCompressionModule.default || imageCompressionModule;
-          const options = {
-            maxSizeMB: 1.5,
-            maxWidthOrHeight: 2560,
-            fileType: "image/webp",
-            initialQuality: 0.85,
-            useWebWorker: true,
-          };
-          const compressedBlob = await imageCompression(file, options);
-          const webpName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
-          processedFile = new File([compressedBlob], webpName, { type: "image/webp" });
-        } catch (err) {
-          console.warn("Erreur compression image, utilisation du fichier original:", err);
-          processedFile = file;
-        }
-      }
-
-      newPending.push(processedFile);
-      const localUrl = URL.createObjectURL(processedFile);
-
-      previewItems.push({
-        id: `prev-${Date.now()}-${i}-${Math.random()}`,
-        kind: processedFile.type.startsWith("video") ? "video" : "photo",
-        src: localUrl,
-        caption: processedFile.name,
-      });
-    }
+    // Génération instantanée des aperçus locaux via URL.createObjectURL
+    const previewItems: EventMedia[] = fileArray.map((file, i) => ({
+      id: `prev-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+      kind: file.type.startsWith("video") ? "video" : "photo",
+      src: URL.createObjectURL(file),
+      caption: file.name,
+    }));
 
     setPendingFiles(newPending);
     setDraft((d) => {
@@ -238,14 +202,6 @@ function EventEditor({
         media: updatedMedia,
         cover: d.cover || firstPhoto || firstMedia || "",
       };
-    });
-
-    setUploadStatus({
-      isUploading: false,
-      currentFile: "",
-      message: `${fileArray.length} média(s) prêt(s) pour publication Supabase !`,
-      percent: 100,
-      error: "",
     });
   };
 
@@ -267,7 +223,7 @@ function EventEditor({
   const pickCover = (src: string) => set({ cover: src });
 
   /**
-   * Clic sur "Publier l'événement" / "Enregistrer" : téléversement Supabase Storage 'portfolio-media' & insertion table 'portfolio'
+   * Publication de l'événement : compression parallèle ultra-rapide et téléversement vers Supabase
    */
   const save = async () => {
     if (!draft.title.trim()) {
@@ -278,13 +234,39 @@ function EventEditor({
     setUploadStatus({
       isUploading: true,
       currentFile: "",
-      message: "Publication vers Supabase Storage & table 'portfolio'...",
+      message: "Optimisation & Compression des images WebP...",
       percent: 10,
       error: "",
     });
 
     try {
-      // Filtrer les médias déjà existants sur le serveur (non blob:)
+      // Compression ultra-rapide parallèle des fichiers images
+      const compressedFiles: File[] = await Promise.all(
+        pendingFiles.map(async (file) => {
+          if (file.type.startsWith("image/")) {
+            try {
+              const imageCompressionModule = await import("browser-image-compression");
+              const imageCompression = imageCompressionModule.default || imageCompressionModule;
+              const options = {
+                maxSizeMB: 1.2,
+                maxWidthOrHeight: 2560,
+                fileType: "image/webp",
+                initialQuality: 0.85,
+                useWebWorker: true,
+              };
+              const blob = await imageCompression(file, options);
+              const webpName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
+              return new File([blob], webpName, { type: "image/webp" });
+            } catch (err) {
+              console.warn("Erreur compression, utilisation fichier d'origine:", err);
+              return file;
+            }
+          }
+          return file;
+        })
+      );
+
+      // Récupérer les médias déjà téléversés (non blob:)
       const existingMediaUrls = draft.media
         .map((m) => m.src)
         .filter((src) => src && !src.startsWith("blob:"));
@@ -300,7 +282,7 @@ function EventEditor({
           featured: draft.featured,
           existingMediaUrls,
         },
-        pendingFiles,
+        compressedFiles,
         (msg, percent) => {
           setUploadStatus({
             isUploading: true,
@@ -316,14 +298,14 @@ function EventEditor({
         setUploadStatus({
           isUploading: false,
           currentFile: "",
-          message: "Événement publié et sauvegardé avec succès dans Supabase !",
+          message: "Événement publié avec succès !",
           percent: 100,
           error: "",
         });
         setPendingFiles([]);
-        onSave();
+        onSave(); // Ferme le modal, réinitialise le formulaire et re-fetch la table 'portfolio'
       } else {
-        const errMsg = res.error || "Erreur lors de la sauvegarde Supabase";
+        const errMsg = res.error || "Erreur Supabase";
         console.error("Erreur Insert Supabase:", errMsg);
         setUploadStatus({
           isUploading: false,
@@ -437,7 +419,7 @@ function EventEditor({
                   <Loader2 className="h-5 w-5 animate-spin text-accent shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between text-xs font-bold text-accent">
-                      <span className="truncate">{uploadStatus.currentFile || "Envoi Supabase Storage..."}</span>
+                      <span className="truncate">{uploadStatus.currentFile || "Téléversement Supabase Storage..."}</span>
                       <span>{uploadStatus.percent}%</span>
                     </div>
                     <p className="mt-1 text-xs text-foreground/90 leading-tight">{uploadStatus.message}</p>

@@ -12,7 +12,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 export const BUCKET_NAME = "portfolio-media";
 
 /**
- * Récupère tous les événements directement depuis la table unique Supabase 'portfolio'
+ * Récupère tous les événements directement depuis la table 'portfolio'
  */
 export async function fetchEventsFromSupabase(): Promise<EventItem[]> {
   try {
@@ -81,37 +81,28 @@ export async function fetchEventsFromSupabase(): Promise<EventItem[]> {
 /**
  * Téléverse un fichier directement dans le bucket Supabase Storage 'portfolio-media'
  */
-export async function uploadFileToSupabaseStorage(
-  file: File
-): Promise<{ publicUrl: string; storagePath: string } | null> {
-  try {
-    const sanitizeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const filePath = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${sanitizeName}`;
+export async function uploadSingleFile(file: File): Promise<string> {
+  const fileExt = file.name.split(".").pop() || "png";
+  const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET_NAME)
-      .upload(filePath, file, {
-        cacheControl: "3600",
-        upsert: true,
-      });
+  const { error: uploadErr } = await supabase.storage
+    .from(BUCKET_NAME)
+    .upload(fileName, file, { cacheControl: "3600", upsert: true });
 
-    if (uploadError) {
-      console.error("Erreur Supabase Storage upload:", uploadError.message || uploadError);
-      return null;
-    }
-
-    const { data: urlData } = supabase.storage
-      .from(BUCKET_NAME)
-      .getPublicUrl(filePath);
-
-    return {
-      publicUrl: urlData.publicUrl,
-      storagePath: filePath,
-    };
-  } catch (err: any) {
-    console.error("Erreur inattendue Supabase Storage upload:", err.message || err);
-    return null;
+  if (uploadErr) {
+    console.error("Erreur Supabase Storage Upload:", uploadErr.message || uploadErr);
+    throw uploadErr;
   }
+
+  const { data } = supabase.storage
+    .from(BUCKET_NAME)
+    .getPublicUrl(fileName);
+
+  if (!data?.publicUrl) {
+    throw new Error("Impossible de récupérer l'URL publique du fichier téléversé.");
+  }
+
+  return data.publicUrl;
 }
 
 /**
@@ -134,22 +125,22 @@ export async function publishEventToSupabase(
   try {
     const uploadedUrls: string[] = [];
 
-    // 1. Téléversement parallèle vers Supabase Storage 'portfolio-media'
+    // 1. Envoi rapide dans Supabase Storage 'portfolio-media'
     if (filesToUpload.length > 0) {
-      onProgress?.(`Téléversement de ${filesToUpload.length} média(s) dans Supabase Storage...`, 20);
+      onProgress?.(`Téléversement de ${filesToUpload.length} fichier(s) dans Supabase Storage...`, 20);
 
       const totalFiles = filesToUpload.length;
       let completedCount = 0;
 
       const uploadPromises = filesToUpload.map(async (file) => {
-        const res = await uploadFileToSupabaseStorage(file);
+        const publicUrl = await uploadSingleFile(file);
         completedCount++;
         const percent = Math.round(20 + (completedCount / totalFiles) * 65);
         onProgress?.(
           `Téléversement (${completedCount}/${totalFiles}) : ${file.name}`,
           percent
         );
-        return res ? res.publicUrl : null;
+        return publicUrl;
       });
 
       const results = await Promise.all(uploadPromises);
@@ -158,13 +149,12 @@ export async function publishEventToSupabase(
       });
     }
 
-    // Réunir avec les médias existants éventuels
+    // Réunir avec les médias existants éventuels (pour l'édition)
     const mediaUrlsArray = [
       ...(eventData.existingMediaUrls || []),
       ...uploadedUrls,
     ];
 
-    // URL de couverture (cover_url)
     const coverUrl = eventData.cover_url || mediaUrlsArray[0] || "";
 
     onProgress?.("Enregistrement dans la table Supabase 'portfolio'...", 90);
@@ -189,7 +179,7 @@ export async function publishEventToSupabase(
 
     if (insertErr) {
       console.error("Erreur Supabase:", insertErr.message || insertErr);
-      throw new Error(insertErr.message || "Échec de l'insertion dans Supabase");
+      throw insertErr;
     }
 
     onProgress?.("Événement publié et sauvegardé avec succès !", 100);
