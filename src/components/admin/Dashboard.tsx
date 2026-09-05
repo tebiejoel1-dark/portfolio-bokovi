@@ -9,7 +9,6 @@ import {
   Clapperboard,
   Trash2,
   Mail,
-  Sparkles,
 } from "lucide-react";
 import { getStats, resetStats } from "@/lib/analytics";
 import {
@@ -19,12 +18,11 @@ import {
 } from "@/lib/store";
 import type { AnalyticsRecord, EventItem, QuoteRequest } from "@/lib/types";
 import EventManager from "./EventManager";
-import PortfolioManager from "./PortfolioManager";
 
-type Tab = "portfolio" | "stats" | "events" | "quotes";
+type Tab = "events" | "stats" | "quotes";
 
 export default function Dashboard() {
-  const [tab, setTab] = useState<Tab>("portfolio");
+  const [tab, setTab] = useState<Tab>("events");
   const [refresh, setRefresh] = useState(0);
   const [stats, setStats] = useState<{
     total: number;
@@ -69,12 +67,10 @@ export default function Dashboard() {
   );
 
   const navItems = [
-    { id: "portfolio" as Tab, label: "Médias Supabase", icon: Sparkles },
-    { id: "stats" as Tab, label: "Statistiques", icon: Users },
     { id: "events" as Tab, label: "Événements", icon: ImageIcon },
+    { id: "stats" as Tab, label: "Statistiques", icon: Users },
     { id: "quotes" as Tab, label: "Demandes", icon: Mail },
   ];
-
 
   return (
     <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
@@ -82,7 +78,7 @@ export default function Dashboard() {
         <div>
           <h1 className="font-display text-3xl font-extrabold">Dashboard</h1>
           <p className="mt-1 text-sm text-dim">
-            Pilotage du site — statistiques, événements et demandes de devis.
+            Pilotage du site — gestion des événements et demandes de devis.
           </p>
         </div>
         <button
@@ -116,7 +112,6 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {tab === "portfolio" && <PortfolioManager />}
 
       {tab === "stats" && (
         <div className="space-y-6">

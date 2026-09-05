@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { gsap, ScrollTrigger } from "@/lib/gsap";
 import { HERO_SLIDES, PROFILE } from "@/lib/content";
-import { fetchPortfolioItems } from "@/lib/supabase";
+import { getEvents } from "@/lib/store";
 import Magnetic from "./Magnetic";
 
 export default function Hero({ onPlay }: { onPlay: () => void }) {
@@ -17,17 +17,26 @@ export default function Hero({ onPlay }: { onPlay: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchPortfolioItems().then((items) => {
-      if (cancelled) return;
-      const heroItems = items.filter((i) => i.section === "hero");
-      if (heroItems.length > 0) {
-        setSlides(heroItems.map((i) => i.url));
+    getEvents().then((events) => {
+      if (cancelled || !events || events.length === 0) return;
+      const urls: string[] = [];
+      events.forEach((e) => {
+        if (e.cover) urls.push(e.cover);
+        e.media?.forEach((m) => {
+          if (m.kind === "photo" && m.src && !urls.includes(m.src)) {
+            urls.push(m.src);
+          }
+        });
+      });
+      if (urls.length > 0) {
+        setSlides(urls.slice(0, 10));
       }
     });
     return () => {
       cancelled = true;
     };
   }, []);
+
 
   // Listen for lang changes from Navbar
   useEffect(() => {

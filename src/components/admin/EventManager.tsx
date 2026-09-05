@@ -20,11 +20,8 @@ import {
   saveEvent,
   deleteEvent,
   createEventId,
-  mediaToEventMedia,
-  getCustomMedia,
-  saveCustomMedia,
-  removeCustomMedia,
 } from "@/lib/store";
+
 import { uploadMediaToCloudinary } from "@/lib/cloudinary";
 import { CATEGORIES } from "@/lib/types";
 import type { EventItem, EventMedia, Category } from "@/lib/types";
@@ -192,7 +189,6 @@ function EventEditor({
     error: "",
   });
   const fileRef = useRef<HTMLInputElement>(null);
-  const custom = getCustomMedia();
 
   const set = (patch: Partial<EventItem>) => setDraft((d) => ({ ...d, ...patch }));
 
@@ -232,12 +228,8 @@ function EventEditor({
         };
 
         pendingList.push(newMedia);
-        saveCustomMedia(result.publicId, {
-          dataUrl: result.url,
-          kind: result.kind,
-          name: file.name,
-        });
       } catch (err) {
+
         console.error("Erreur d'envoi Cloudinary:", err);
         setUploadStatus((prev) => ({
           ...prev,
@@ -466,54 +458,10 @@ function EventEditor({
               </div>
             )}
           </div>
-
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-dim">
-              Bibliothèque personnelle
-            </div>
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-              {Object.entries(custom).map(([id, c]) => (
-                <div key={id} className="group relative aspect-square overflow-hidden rounded-xl border border-white/10">
-                  {c.kind === "video" ? (
-                    <div className="flex h-full w-full items-center justify-center bg-black text-accent">
-                      <Clapperboard size={18} />
-                    </div>
-                  ) : (
-                    <img src={c.dataUrl} alt={c.name} className="h-full w-full object-cover" />
-                  )}
-                  <button
-                    onClick={() => {
-                      setDraft((d) => ({
-                        ...d,
-                        media: [
-                          ...d.media,
-                          { id: createEventId(), kind: c.kind, src: c.dataUrl, caption: c.name },
-                        ],
-                      }));
-                    }}
-                    className="absolute inset-x-0 bottom-0 bg-accent py-1 text-[9px] font-bold text-black opacity-0 transition-opacity group-hover:opacity-100"
-                  >
-                    Ajouter au site
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (confirm(`Supprimer « ${c.name} » de la bibliothèque ?`)) {
-                        removeCustomMedia(id);
-                        bump();
-                      }
-                    }}
-                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                    aria-label="Supprimer de la bibliothèque"
-                  >
-                    <Trash2 size={9} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
         <div className="flex items-center justify-between border-t border-white/5 px-6 py-4">
+
           <div className="text-xs text-dim">
             {draft.cover ? (
               <span className="flex items-center gap-1.5 text-accent">
