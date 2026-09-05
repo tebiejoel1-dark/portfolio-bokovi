@@ -25,9 +25,11 @@ export interface EventMedia {
   kind: MediaKind;
   src: string;
   public_id?: string;
+  storage_path?: string;
   poster?: string;
   caption?: string;
 }
+
 
 
 export interface EventItem {
