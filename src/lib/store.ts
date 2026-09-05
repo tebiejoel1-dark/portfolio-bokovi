@@ -1,7 +1,7 @@
 "use client";
 
 import { ADMIN_CODE } from "./content";
-import type { EventItem, EventMedia, QuoteRequest } from "./types";
+import type { EventItem, QuoteRequest } from "./types";
 import {
   fetchEventsFromSupabase,
   publishEventToSupabase,
@@ -35,14 +35,14 @@ function write(key: string, value: unknown) {
 const ADMIN_HEADERS = { "x-admin-code": ADMIN_CODE };
 
 /**
- * Récupère tous les événements en direct depuis Supabase ('events' & 'event_media')
+ * Récupère tous les événements en direct depuis la table Supabase 'portfolio'
  */
 export async function getEvents(): Promise<EventItem[]> {
   return await fetchEventsFromSupabase();
 }
 
 /**
- * Publication d'un événement et de ses fichiers dans Supabase Storage 'portfolio-media' et DB ('events' & 'event_media')
+ * Publication d'un événement et de ses fichiers dans Supabase Storage 'portfolio-media' et table 'portfolio'
  */
 export async function publishEvent(
   eventData: {
@@ -53,6 +53,7 @@ export async function publishEvent(
     description: string;
     cover_url?: string;
     featured?: boolean;
+    existingMediaUrls?: string[];
   },
   filesToUpload: File[],
   onProgress?: (msg: string, percent: number) => void
@@ -61,7 +62,7 @@ export async function publishEvent(
 }
 
 /**
- * Supprime un événement et ses fichiers dans Supabase Storage ('portfolio-media') et DB ('events')
+ * Supprime un événement de la table Supabase 'portfolio'
  */
 export async function deleteEvent(id: string): Promise<boolean> {
   return await deleteEventFromSupabase(id);

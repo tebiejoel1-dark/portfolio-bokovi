@@ -39,7 +39,7 @@ export default function EventManager({
         <div>
           <h3 className="font-display text-lg font-bold">Gestion des événements</h3>
           <p className="text-sm text-dim">
-            Crée un événement, prévisualise les médias et publie directement dans Supabase.
+            Crée un événement, prévisualise les médias et publie directement dans Supabase (table &apos;portfolio&apos;).
           </p>
         </div>
         <button
@@ -66,11 +66,17 @@ export default function EventManager({
         {events.map((event) => (
           <div key={event.id} className="glass-strong overflow-hidden rounded-3xl">
             <div className="relative h-40">
-              <img
-                src={event.cover}
-                alt={event.title}
-                className="h-full w-full object-cover"
-              />
+              {event.cover ? (
+                <img
+                  src={event.cover}
+                  alt={event.title}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-white/5 text-dim text-xs">
+                  Pas de couverture
+                </div>
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
               <div className="absolute bottom-3 left-4 flex items-center gap-2">
                 <span className="rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-black">
@@ -95,7 +101,7 @@ export default function EventManager({
                 </button>
                 <button
                   onClick={async () => {
-                    if (confirm(`Supprimer « ${event.title} » et ses médias dans Supabase Storage & DB ?`)) {
+                    if (confirm(`Supprimer « ${event.title} » de la table Supabase 'portfolio' ?`)) {
                       await deleteEvent(event.id);
                       bump();
                     }
@@ -171,7 +177,7 @@ function EventEditor({
   const set = (patch: Partial<EventItem>) => setDraft((d) => ({ ...d, ...patch }));
 
   /**
-   * Sélection des fichiers : prévisualisation locale instantanée & compression d'image client
+   * Sélection des fichiers : prévisualisation locale instantanée & compression d'image client WebP
    */
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -187,7 +193,7 @@ function EventEditor({
         setUploadStatus({
           isUploading: true,
           currentFile: file.name,
-          message: `Compression rapide client de "${file.name}"...`,
+          message: `Compression rapide client WebP de "${file.name}"...`,
           percent: 20,
           error: "",
         });
@@ -215,7 +221,7 @@ function EventEditor({
       const localUrl = URL.createObjectURL(processedFile);
 
       previewItems.push({
-        id: `prev-${Date.now()}-${i}`,
+        id: `prev-${Date.now()}-${i}-${Math.random()}`,
         kind: processedFile.type.startsWith("video") ? "video" : "photo",
         src: localUrl,
         caption: processedFile.name,
@@ -237,7 +243,7 @@ function EventEditor({
     setUploadStatus({
       isUploading: false,
       currentFile: "",
-      message: `${fileArray.length} média(s) prêt(s) pour la publication Supabase !`,
+      message: `${fileArray.length} média(s) prêt(s) pour publication Supabase !`,
       percent: 100,
       error: "",
     });
@@ -261,7 +267,7 @@ function EventEditor({
   const pickCover = (src: string) => set({ cover: src });
 
   /**
-   * Clic sur "Publier l'événement" / "Enregistrer" : téléversement Supabase Storage 'portfolio-media' & insertion DB
+   * Clic sur "Publier l'événement" / "Enregistrer" : téléversement Supabase Storage 'portfolio-media' & insertion table 'portfolio'
    */
   const save = async () => {
     if (!draft.title.trim()) {
@@ -272,12 +278,17 @@ function EventEditor({
     setUploadStatus({
       isUploading: true,
       currentFile: "",
-      message: "Publication vers Supabase Storage & DB...",
-      percent: 15,
+      message: "Publication vers Supabase Storage & table 'portfolio'...",
+      percent: 10,
       error: "",
     });
 
     try {
+      // Filtrer les médias déjà existants sur le serveur (non blob:)
+      const existingMediaUrls = draft.media
+        .map((m) => m.src)
+        .filter((src) => src && !src.startsWith("blob:"));
+
       const res = await publishEvent(
         {
           title: draft.title,
@@ -285,8 +296,9 @@ function EventEditor({
           location: draft.location,
           date: draft.date,
           description: draft.description,
-          cover_url: draft.cover,
+          cover_url: draft.cover.startsWith("blob:") ? undefined : draft.cover,
           featured: draft.featured,
+          existingMediaUrls,
         },
         pendingFiles,
         (msg, percent) => {
@@ -311,8 +323,8 @@ function EventEditor({
         setPendingFiles([]);
         onSave();
       } else {
-        const errMsg = res.error || "Erreur Supabase";
-        console.error("Erreur Insert Event Supabase:", errMsg);
+        const errMsg = res.error || "Erreur lors de la sauvegarde Supabase";
+        console.error("Erreur Insert Supabase:", errMsg);
         setUploadStatus({
           isUploading: false,
           currentFile: "",

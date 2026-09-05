@@ -12,17 +12,17 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 export const BUCKET_NAME = "portfolio-media";
 
 /**
- * Récupère tous les événements directement depuis Supabase (table 'events' et jointure 'event_media')
+ * Récupère tous les événements directement depuis la table unique Supabase 'portfolio'
  */
 export async function fetchEventsFromSupabase(): Promise<EventItem[]> {
   try {
     const { data: events, error } = await supabase
-      .from("events")
-      .select("*, event_media(*)")
+      .from("portfolio")
+      .select("*")
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Erreur Select Events Supabase:", error.message || error);
+      console.error("Erreur Select Portfolio Supabase:", error.message || error);
       return [];
     }
 
@@ -31,14 +31,29 @@ export async function fetchEventsFromSupabase(): Promise<EventItem[]> {
     }
 
     return events.map((item: any) => {
-      const mediaList: EventMedia[] = (item.event_media || []).map((m: any) => ({
-        id: String(m.id || m.storage_path || Math.random()),
-        kind: m.media_type === "video" || m.kind === "video" ? "video" : "photo",
-        src: m.url || m.src || "",
-        storage_path: m.storage_path || m.public_id || "",
-        public_id: m.storage_path || m.public_id || "",
-        caption: m.caption || m.storage_path || "",
-      }));
+      let rawUrls: string[] = [];
+      if (Array.isArray(item.media_urls)) {
+        rawUrls = item.media_urls;
+      } else if (typeof item.media_urls === "string") {
+        try {
+          rawUrls = JSON.parse(item.media_urls);
+        } catch {
+          rawUrls = item.media_urls ? [item.media_urls] : [];
+        }
+      }
+
+      const mediaList: EventMedia[] = rawUrls.map((url: string, idx: number) => {
+        const isVideo =
+          Boolean(url.toLowerCase().match(/\.(mp4|mov|webm|ogg)($|\?)/)) ||
+          url.includes("/video/") ||
+          url.includes("video");
+        return {
+          id: `${item.id}-${idx}`,
+          kind: isVideo ? "video" : "photo",
+          src: url,
+          caption: item.title || "",
+        };
+      });
 
       const firstPhoto = mediaList.find((m) => m.kind === "photo")?.src;
       const firstMedia = mediaList[0]?.src;
@@ -71,7 +86,7 @@ export async function uploadFileToSupabaseStorage(
 ): Promise<{ publicUrl: string; storagePath: string } | null> {
   try {
     const sanitizeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const filePath = `${Date.now()}_${sanitizeName}`;
+    const filePath = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${sanitizeName}`;
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET_NAME)
@@ -100,8 +115,7 @@ export async function uploadFileToSupabaseStorage(
 }
 
 /**
- * Insère un nouvel événement dans 'events' (champs title, category, location, event_date, description, cover_url)
- * et insère ses fichiers téléversés dans 'event_media'
+ * Téléverse les médias et insère l'événement dans la table unique 'portfolio'
  */
 export async function publishEventToSupabase(
   eventData: {
@@ -112,38 +126,52 @@ export async function publishEventToSupabase(
     description: string;
     cover_url?: string;
     featured?: boolean;
+    existingMediaUrls?: string[];
   },
   filesToUpload: File[],
   onProgress?: (msg: string, percent: number) => void
 ): Promise<{ success: boolean; event: any | null; error?: string }> {
   try {
-    const uploadedResults: { publicUrl: string; storagePath: string; isVideo: boolean }[] = [];
+    const uploadedUrls: string[] = [];
 
-    // 1. Téléversement dans Supabase Storage 'portfolio-media'
-    for (let i = 0; i < filesToUpload.length; i++) {
-      const file = filesToUpload[i];
-      const percent = Math.round(((i + 1) / filesToUpload.length) * 70);
-      onProgress?.(`Téléversement de "${file.name}" dans Supabase Storage...`, percent);
+    // 1. Téléversement parallèle vers Supabase Storage 'portfolio-media'
+    if (filesToUpload.length > 0) {
+      onProgress?.(`Téléversement de ${filesToUpload.length} média(s) dans Supabase Storage...`, 20);
 
-      const res = await uploadFileToSupabaseStorage(file);
-      if (res) {
-        uploadedResults.push({
-          publicUrl: res.publicUrl,
-          storagePath: res.storagePath,
-          isVideo: file.type.startsWith("video"),
-        });
-      }
+      const totalFiles = filesToUpload.length;
+      let completedCount = 0;
+
+      const uploadPromises = filesToUpload.map(async (file) => {
+        const res = await uploadFileToSupabaseStorage(file);
+        completedCount++;
+        const percent = Math.round(20 + (completedCount / totalFiles) * 65);
+        onProgress?.(
+          `Téléversement (${completedCount}/${totalFiles}) : ${file.name}`,
+          percent
+        );
+        return res ? res.publicUrl : null;
+      });
+
+      const results = await Promise.all(uploadPromises);
+      results.forEach((url) => {
+        if (url) uploadedUrls.push(url);
+      });
     }
 
-    // Déterminer l'URL de couverture (cover_url)
-    const firstImage = uploadedResults.find((m) => !m.isVideo)?.publicUrl;
-    const coverUrl = eventData.cover_url || firstImage || (uploadedResults[0] ? uploadedResults[0].publicUrl : "");
+    // Réunir avec les médias existants éventuels
+    const mediaUrlsArray = [
+      ...(eventData.existingMediaUrls || []),
+      ...uploadedUrls,
+    ];
 
-    onProgress?.("Enregistrement de l'événement dans la table 'events'...", 80);
+    // URL de couverture (cover_url)
+    const coverUrl = eventData.cover_url || mediaUrlsArray[0] || "";
 
-    // 2. Insertion dans la table 'events' (avec cover_url et event_date)
-    const { data: newEvent, error: eventErr } = await supabase
-      .from("events")
+    onProgress?.("Enregistrement dans la table Supabase 'portfolio'...", 90);
+
+    // 2. Insert unique dans la table 'portfolio'
+    const { data: newEvent, error: insertErr } = await supabase
+      .from("portfolio")
       .insert([
         {
           title: eventData.title,
@@ -152,40 +180,19 @@ export async function publishEventToSupabase(
           event_date: eventData.date,
           description: eventData.description,
           cover_url: coverUrl,
+          media_urls: mediaUrlsArray,
           featured: Boolean(eventData.featured),
         },
       ])
       .select()
       .single();
 
-    if (eventErr) {
-      console.error("Erreur Insert Event:", eventErr.message || eventErr);
-      throw eventErr;
+    if (insertErr) {
+      console.error("Erreur Supabase:", insertErr.message || insertErr);
+      throw new Error(insertErr.message || "Échec de l'insertion dans Supabase");
     }
 
-    const eventId = newEvent.id;
-
-    // 3. Insertion dans la table 'event_media'
-    if (uploadedResults.length > 0) {
-      onProgress?.("Enregistrement des médias dans la table 'event_media'...", 90);
-
-      const mediaRows = uploadedResults.map((m) => ({
-        event_id: eventId,
-        url: m.publicUrl,
-        storage_path: m.storagePath,
-        media_type: m.isVideo ? "video" : "image",
-      }));
-
-      const { error: mediaErr } = await supabase
-        .from("event_media")
-        .insert(mediaRows);
-
-      if (mediaErr) {
-        console.error("Erreur Insert Media:", mediaErr.message || mediaErr);
-      }
-    }
-
-    onProgress?.("Événement et médias publiés avec succès !", 100);
+    onProgress?.("Événement publié et sauvegardé avec succès !", 100);
     return { success: true, event: newEvent };
   } catch (err: any) {
     const msg = err?.message || String(err);
@@ -195,41 +202,17 @@ export async function publishEventToSupabase(
 }
 
 /**
- * Supprime les fichiers dans Supabase Storage 'portfolio-media' via leurs storage_path puis supprime l'événement dans 'events'
+ * Supprime un événement de la table unique 'portfolio'
  */
 export async function deleteEventFromSupabase(eventId: string): Promise<boolean> {
   try {
-    // 1. Récupérer tous les storage_path des médias associés dans event_media
-    const { data: mediaItems } = await supabase
-      .from("event_media")
-      .select("storage_path")
-      .eq("event_id", eventId);
-
-    // 2. Supprimer les fichiers dans Supabase Storage via storage.from('portfolio-media').remove(paths)
-    if (mediaItems && mediaItems.length > 0) {
-      const paths = mediaItems
-        .map((m: any) => m.storage_path)
-        .filter((p: string) => Boolean(p) && p.trim() !== "");
-
-      if (paths.length > 0) {
-        const { error: storageErr } = await supabase.storage
-          .from(BUCKET_NAME)
-          .remove(paths);
-
-        if (storageErr) {
-          console.warn("Erreur suppression Supabase Storage:", storageErr.message || storageErr);
-        }
-      }
-    }
-
-    // 3. Supprimer l'événement dans la table 'events'
     const { error: deleteErr } = await supabase
-      .from("events")
+      .from("portfolio")
       .delete()
       .eq("id", eventId);
 
     if (deleteErr) {
-      console.error("Erreur Delete Event Supabase:", deleteErr.message || deleteErr);
+      console.error("Erreur Delete Portfolio Supabase:", deleteErr.message || deleteErr);
       return false;
     }
 
