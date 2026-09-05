@@ -16,10 +16,11 @@ import {
   EyeOff,
 } from "lucide-react";
 import {
-  saveEventWithStorage,
+  createEvent,
   deleteEvent,
   createEventId,
 } from "@/lib/store";
+import { uploadMediaToCloudinary } from "@/lib/cloudinary";
 import { CATEGORIES } from "@/lib/types";
 import type { EventItem, EventMedia, Category } from "@/lib/types";
 
@@ -39,7 +40,7 @@ export default function EventManager({
         <div>
           <h3 className="font-display text-lg font-bold">Gestion des événements</h3>
           <p className="text-sm text-dim">
-            Crée un événement, ajoute photos & vidéos : téléversés directement sur Supabase Storage.
+            Crée un événement, ajoute des photos/vidéos (Cloudinary 'charlie') : tout est enregistré dans Supabase.
           </p>
         </div>
         <button
@@ -83,10 +84,6 @@ export default function EventManager({
                 )}
               </div>
               <div className="absolute right-3 top-3 flex gap-2">
-                <ToggleFeatured
-                  event={event}
-                  bump={bump}
-                />
                 <button
                   onClick={() => {
                     setEditing(event);
@@ -99,7 +96,7 @@ export default function EventManager({
                 </button>
                 <button
                   onClick={async () => {
-                    if (confirm(`Supprimer « ${event.title} » et tous ses médias sur Supabase ?`)) {
+                    if (confirm(`Supprimer « ${event.title} » et ses médias de Supabase ?`)) {
                       await deleteEvent(event.id);
                       bump();
                     }
@@ -142,22 +139,6 @@ export default function EventManager({
   );
 }
 
-function ToggleFeatured({ event, bump }: { event: EventItem; bump: () => void }) {
-  return (
-    <button
-      onClick={() => {
-        saveEventWithStorage({ ...event, featured: !event.featured }, []).then(bump);
-      }}
-      className={`flex h-9 w-9 items-center justify-center rounded-full glass transition-colors ${
-        event.featured ? "text-accent" : "text-foreground hover:text-accent"
-      }`}
-      aria-label={event.featured ? "Retirer des vedettes" : "Mettre en vedette"}
-    >
-      <Star size={14} />
-    </button>
-  );
-}
-
 function EventEditor({
   event,
   creating,
@@ -172,7 +153,9 @@ function EventEditor({
   bump: () => void;
 }) {
   const [draft, setDraft] = useState<EventItem>(event);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploadedMedias, setUploadedMedias] = useState<
+    { url: string; publicId: string; kind: "photo" | "video" }[]
+  >([]);
   const [uploadStatus, setUploadStatus] = useState<{
     isUploading: boolean;
     currentFile: string;
@@ -193,61 +176,67 @@ function EventEditor({
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const fileArray = Array.from(files);
-    const newPendingFiles: File[] = [...pendingFiles];
-    const previewMedias: EventMedia[] = [];
+    const newUploaded: { url: string; publicId: string; kind: "photo" | "video" }[] = [...uploadedMedias];
+    const newMediaItems: EventMedia[] = [];
 
     for (let i = 0; i < fileArray.length; i++) {
       const file = fileArray[i];
-      let processedFile = file;
+      setUploadStatus({
+        isUploading: true,
+        currentFile: file.name,
+        message: `Téléversement Cloudinary (preset 'charlie') (${i + 1}/${fileArray.length})...`,
+        percent: Math.round(((i + 0.1) / fileArray.length) * 100),
+        error: "",
+      });
 
-      if (file.type.startsWith("image/")) {
-        setUploadStatus({
-          isUploading: true,
-          currentFile: file.name,
-          message: `Compression client de "${file.name}" (WebP HD max 2560px)...`,
-          percent: 30,
-          error: "",
+      try {
+        const result = await uploadMediaToCloudinary(file, (st) => {
+          const stepPercent = Math.round(
+            ((i + (st.progressPercent ? st.progressPercent / 100 : 0.5)) / fileArray.length) * 100
+          );
+          setUploadStatus({
+            isUploading: true,
+            currentFile: file.name,
+            message: st.message,
+            percent: Math.min(100, stepPercent),
+            error: "",
+          });
         });
 
-        try {
-          const imageCompressionModule = await import("browser-image-compression");
-          const imageCompression = imageCompressionModule.default || imageCompressionModule;
-          const options = {
-            maxSizeMB: 1.5,
-            maxWidthOrHeight: 2560,
-            fileType: "image/webp",
-            initialQuality: 0.85,
-            useWebWorker: true,
-          };
-          const compressedBlob = await imageCompression(file, options);
-          const webpName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
-          processedFile = new File([compressedBlob], webpName, { type: "image/webp" });
-        } catch (err) {
-          console.warn("Erreur compression image, fichier original conservé:", err);
-          processedFile = file;
-        }
-      }
+        const item = {
+          url: result.url,
+          publicId: result.publicId,
+          kind: result.kind,
+        };
 
-      newPendingFiles.push(processedFile);
-      previewMedias.push({
-        id: `preview-${Date.now()}-${i}`,
-        kind: processedFile.type.startsWith("video") ? "video" : "photo",
-        src: URL.createObjectURL(processedFile),
-        caption: processedFile.name,
-      });
+        newUploaded.push(item);
+        newMediaItems.push({
+          id: result.publicId || `med-${Date.now()}-${i}`,
+          kind: result.kind,
+          src: result.url,
+          public_id: result.publicId,
+          caption: file.name,
+        });
+      } catch (err: any) {
+        console.error("Erreur d'envoi Cloudinary:", err?.message || err);
+        setUploadStatus((prev) => ({
+          ...prev,
+          error: `Échec d'envoi pour "${file.name}": ${err?.message || "Vérifie le réseau"}`,
+        }));
+      }
     }
 
-    setPendingFiles(newPendingFiles);
+    setUploadedMedias(newUploaded);
     setDraft((d) => ({
       ...d,
-      media: [...d.media, ...previewMedias],
-      cover: d.cover || previewMedias.find((m) => m.kind === "photo")?.src || previewMedias[0]?.src || "",
+      media: [...d.media, ...newMediaItems],
+      cover: d.cover || newMediaItems.find((m) => m.kind === "photo")?.src || newMediaItems[0]?.src || "",
     }));
 
     setUploadStatus({
       isUploading: false,
       currentFile: "",
-      message: `${fileArray.length} fichier(s) prêt(s) pour l'envoi Supabase !`,
+      message: `${newMediaItems.length} média(s) téléversé(s) sur Cloudinary avec succès !`,
       percent: 100,
       error: "",
     });
@@ -279,37 +268,70 @@ function EventEditor({
     setUploadStatus({
       isUploading: true,
       currentFile: "",
-      message: "Enregistrement dans Supabase...",
-      percent: 10,
+      message: "Enregistrement dans Supabase (tables 'events' & 'event_media')...",
+      percent: 30,
       error: "",
     });
 
-    const success = await saveEventWithStorage(draft, pendingFiles, (msg, percent) => {
-      setUploadStatus({
-        isUploading: true,
-        currentFile: "",
-        message: msg,
-        percent: percent,
-        error: "",
-      });
-    });
+    try {
+      // Insertion des médias déjà existants + nouveaux médias téléversés
+      const allMediasToSave: { url: string; publicId: string; kind: "photo" | "video" }[] = [
+        ...uploadedMedias,
+      ];
 
-    if (success) {
-      setUploadStatus({
-        isUploading: false,
-        currentFile: "",
-        message: "Enregistré avec succès dans Supabase !",
-        percent: 100,
-        error: "",
+      // Inclure les médias existants de l'événement s'ils ne sont pas déjà présents
+      draft.media.forEach((m) => {
+        if (m.src && !allMediasToSave.some((u) => u.url === m.src)) {
+          allMediasToSave.push({
+            url: m.src,
+            publicId: m.public_id || m.id || "",
+            kind: m.kind,
+          });
+        }
       });
-      onSave();
-    } else {
+
+      const res = await createEvent(
+        {
+          title: draft.title,
+          category: draft.category,
+          location: draft.location,
+          date: draft.date,
+          description: draft.description,
+          cover: draft.cover,
+          featured: draft.featured,
+        },
+        allMediasToSave
+      );
+
+      if (res.success) {
+        setUploadStatus({
+          isUploading: false,
+          currentFile: "",
+          message: "Événement et médias enregistrés dans Supabase avec succès !",
+          percent: 100,
+          error: "",
+        });
+        onSave();
+      } else {
+        const errMsg = res.error || "Erreur Supabase";
+        console.error("Erreur Insert Event Supabase:", errMsg);
+        setUploadStatus({
+          isUploading: false,
+          currentFile: "",
+          message: "",
+          percent: 0,
+          error: `Échec de l'enregistrement dans Supabase : ${errMsg}`,
+        });
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      console.error("Erreur Try/Catch Publication Event:", errMsg);
       setUploadStatus({
         isUploading: false,
         currentFile: "",
         message: "",
         percent: 0,
-        error: "Échec de l'enregistrement dans Supabase. Vérifie la console.",
+        error: `Échec de l'enregistrement dans Supabase : ${errMsg}`,
       });
     }
   };
@@ -405,7 +427,7 @@ function EventEditor({
                   <Loader2 className="h-5 w-5 animate-spin text-accent shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between text-xs font-bold text-accent">
-                      <span className="truncate">{uploadStatus.currentFile || "Téléversement Supabase Storage..."}</span>
+                      <span className="truncate">{uploadStatus.currentFile || "Téléversement en cours..."}</span>
                       <span>{uploadStatus.percent}%</span>
                     </div>
                     <p className="mt-1 text-xs text-foreground/90 leading-tight">{uploadStatus.message}</p>
