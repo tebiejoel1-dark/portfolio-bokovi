@@ -1,6 +1,7 @@
 "use client";
 
 import type { EventMedia, MediaKind } from "./types";
+import { insertPortfolioItem, type PortfolioSection } from "./supabase";
 
 export const CLOUDINARY_CONFIG = {
   cloudName: "ukz8metd",
@@ -122,6 +123,41 @@ export async function uploadMediaToCloudinary(
     height: data.height,
   };
 }
+
+/**
+ * Téléverse vers Cloudinary puis insère le média dans la table Supabase 'portfolio'
+ * sous la section choisie ('hero', 'shorts_reels', 'video', ou 'celebrite').
+ */
+export async function uploadMediaToCloudinaryAndSupabase(
+  file: File,
+  section: PortfolioSection,
+  onProgress?: ProgressCallback
+) {
+  const result = await uploadMediaToCloudinary(file, onProgress);
+
+  onProgress?.({
+    phase: "uploading",
+    message: `Enregistrement dans Supabase (section: ${section})...`,
+    progressPercent: 90,
+  });
+
+  const { data, error } = await insertPortfolioItem(section, result.url, result.publicId);
+  if (error) {
+    console.error("Échec de l'insertion dans Supabase:", error);
+  }
+
+  onProgress?.({
+    phase: "done",
+    message: "Téléversement Cloudinary & enregistrement Supabase terminés !",
+    progressPercent: 100,
+  });
+
+  return {
+    ...result,
+    supabaseItem: data && data.length > 0 ? data[0] : null,
+  };
+}
+
 
 /**
  * Récupère la liste des médias Cloudinary enregistrés avec le tag portfolio_client_1

@@ -4,14 +4,30 @@ import { useEffect, useRef, useState } from "react";
 import { Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { gsap, ScrollTrigger } from "@/lib/gsap";
 import { HERO_SLIDES, PROFILE } from "@/lib/content";
+import { fetchPortfolioItems } from "@/lib/supabase";
 import Magnetic from "./Magnetic";
 
 export default function Hero({ onPlay }: { onPlay: () => void }) {
   const root = useRef<HTMLDivElement>(null);
   const slidesRef = useRef<HTMLDivElement>(null);
+  const [slides, setSlides] = useState<string[]>(HERO_SLIDES);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [lang, setLang] = useState<"fr" | "en">("fr");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPortfolioItems().then((items) => {
+      if (cancelled) return;
+      const heroItems = items.filter((i) => i.section === "hero");
+      if (heroItems.length > 0) {
+        setSlides(heroItems.map((i) => i.url));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Listen for lang changes from Navbar
   useEffect(() => {
@@ -87,17 +103,17 @@ export default function Hero({ onPlay }: { onPlay: () => void }) {
   }, []);
 
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || slides.length === 0) return;
     const t = setInterval(() => {
-      setIndex((i) => (i + 1) % HERO_SLIDES.length);
+      setIndex((i) => (i + 1) % slides.length);
     }, 4800);
     return () => clearInterval(t);
-  }, [playing]);
+  }, [playing, slides.length]);
 
   useEffect(() => {
-    const slides = slidesRef.current;
-    if (!slides) return;
-    const kids = Array.from(slides.children) as HTMLElement[];
+    const slideElem = slidesRef.current;
+    if (!slideElem) return;
+    const kids = Array.from(slideElem.children) as HTMLElement[];
     kids.forEach((k, i) => {
       k.style.opacity = i === index ? "1" : "0";
       if (i === index) {
@@ -108,7 +124,7 @@ export default function Hero({ onPlay }: { onPlay: () => void }) {
         );
       }
     });
-  }, [index]);
+  }, [index, slides]);
 
   const stats = [
     { value: "+100", label: lang === "fr" ? "Événements" : "Events" },
@@ -126,9 +142,9 @@ export default function Hero({ onPlay }: { onPlay: () => void }) {
       {/* Background slides */}
       <div data-hero-bg className="absolute inset-0">
         <div ref={slidesRef} className="absolute inset-0">
-          {HERO_SLIDES.map((src, i) => (
+          {slides.map((src, i) => (
             <div
-              key={src}
+              key={`${src}-${i}`}
               className="absolute inset-0 transition-opacity duration-1000"
               style={{ opacity: i === 0 ? 1 : 0 }}
             >
@@ -167,7 +183,7 @@ export default function Hero({ onPlay }: { onPlay: () => void }) {
 
         {/* Slide dots */}
         <div className="absolute right-5 bottom-28 z-10 flex flex-col items-end gap-1.5 sm:right-8">
-          {HERO_SLIDES.map((_, i) => (
+          {slides.map((_, i) => (
             <button
               key={i}
               id={`hero-dot-${i}`}
@@ -179,6 +195,7 @@ export default function Hero({ onPlay }: { onPlay: () => void }) {
             />
           ))}
         </div>
+
 
         {/* Title */}
         <div className="mb-6 overflow-hidden">

@@ -9,6 +9,7 @@ import {
   Clapperboard,
   Trash2,
   Mail,
+  Sparkles,
 } from "lucide-react";
 import { getStats, resetStats } from "@/lib/analytics";
 import {
@@ -18,11 +19,12 @@ import {
 } from "@/lib/store";
 import type { AnalyticsRecord, EventItem, QuoteRequest } from "@/lib/types";
 import EventManager from "./EventManager";
+import PortfolioManager from "./PortfolioManager";
 
-type Tab = "stats" | "events" | "quotes";
+type Tab = "portfolio" | "stats" | "events" | "quotes";
 
 export default function Dashboard() {
-  const [tab, setTab] = useState<Tab>("stats");
+  const [tab, setTab] = useState<Tab>("portfolio");
   const [refresh, setRefresh] = useState(0);
   const [stats, setStats] = useState<{
     total: number;
@@ -67,10 +69,12 @@ export default function Dashboard() {
   );
 
   const navItems = [
+    { id: "portfolio" as Tab, label: "Médias Supabase", icon: Sparkles },
     { id: "stats" as Tab, label: "Statistiques", icon: Users },
     { id: "events" as Tab, label: "Événements", icon: ImageIcon },
     { id: "quotes" as Tab, label: "Demandes", icon: Mail },
   ];
+
 
   return (
     <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
@@ -111,6 +115,8 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+
+      {tab === "portfolio" && <PortfolioManager />}
 
       {tab === "stats" && (
         <div className="space-y-6">

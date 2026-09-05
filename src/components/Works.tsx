@@ -4,15 +4,31 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Clapperboard, X, ChevronLeft, ChevronRight, Plus, Heart } from "lucide-react";
 import { gsap } from "@/lib/gsap";
 import { getEvents } from "@/lib/store";
-import { getCloudinaryPortfolioMedia } from "@/lib/cloudinary";
+import { fetchPortfolioItems } from "@/lib/supabase";
 import type { EventItem } from "@/lib/types";
 
 type Filter = "all" | "photo" | "video";
 
-const CATEGORIES = ["all", "Miss Togo", "Mode", "Portrait", "Mariage", "Corporate", "Concert"] as const;
+const CATEGORIES = [
+  "all",
+  "Shorts / Reels",
+  "Vidéos",
+  "Célébrités",
+  "Photo Hero",
+  "Miss Togo",
+  "Mode",
+  "Portrait",
+  "Mariage",
+  "Corporate",
+  "Concert",
+] as const;
 
 const LABELS: Record<string, { fr: string; en: string }> = {
   all: { fr: "Tout", en: "All" },
+  "Shorts / Reels": { fr: "Shorts / Reels", en: "Shorts & Reels" },
+  Vidéos: { fr: "Vidéos", en: "Videos" },
+  Célébrités: { fr: "Célébrités", en: "Celebrities" },
+  "Photo Hero": { fr: "Photo Hero", en: "Hero Photos" },
   "Miss Togo": { fr: "Miss Togo", en: "Miss Togo" },
   Mode: { fr: "Mode", en: "Fashion" },
   Portrait: { fr: "Portrait", en: "Portrait" },
@@ -38,9 +54,101 @@ export default function Works() {
 
   useEffect(() => {
     let cancelled = false;
-    getEvents().then((list) => {
-      if (!cancelled) setEvents(list);
-    });
+    async function loadAll() {
+      const [localList, supabaseItems] = await Promise.all([
+        getEvents(),
+        fetchPortfolioItems(),
+      ]);
+
+      if (cancelled) return;
+
+      const supabaseEvents: EventItem[] = [];
+
+      const shortsReels = supabaseItems.filter((i) => i.section === "shorts_reels");
+      if (shortsReels.length > 0) {
+        supabaseEvents.push({
+          id: "supabase-shorts-reels",
+          title: "Shorts & Reels",
+          category: "Shorts / Reels",
+          location: "Lomé, Togo",
+          date: "2025",
+          description: "Créations vidéo dynamiques, formats courts et réels.",
+          cover: shortsReels[0].url,
+          featured: true,
+          media: shortsReels.map((i, idx) => ({
+            id: String(i.id || `sr-${idx}`),
+            kind: "video",
+            src: i.url,
+            caption: i.public_id || `Reel ${idx + 1}`,
+          })),
+        });
+      }
+
+      const videoList = supabaseItems.filter((i) => i.section === "video");
+      if (videoList.length > 0) {
+        supabaseEvents.push({
+          id: "supabase-videos",
+          title: "Réalisations Vidéos",
+          category: "Vidéos",
+          location: "Lomé, Togo",
+          date: "2025",
+          description: "Vidéos, clips et couvertures de grandes productions.",
+          cover: videoList[0].url,
+          featured: true,
+          media: videoList.map((i, idx) => ({
+            id: String(i.id || `v-${idx}`),
+            kind: "video",
+            src: i.url,
+            caption: i.public_id || `Vidéo ${idx + 1}`,
+          })),
+        });
+      }
+
+      const celebriteList = supabaseItems.filter((i) => i.section === "celebrite");
+      if (celebriteList.length > 0) {
+        supabaseEvents.push({
+          id: "supabase-celebrite",
+          title: "Photos de Célébrités",
+          category: "Célébrités",
+          location: "Lomé & International",
+          date: "2025",
+          description: "Portraits et clichés exclusifs de personnalités.",
+          cover: celebriteList[0].url,
+          featured: true,
+          media: celebriteList.map((i, idx) => ({
+            id: String(i.id || `cel-${idx}`),
+            kind: "photo",
+            src: i.url,
+            caption: i.public_id || `Célébrité ${idx + 1}`,
+          })),
+        });
+      }
+
+      const heroList = supabaseItems.filter((i) => i.section === "hero");
+      if (heroList.length > 0) {
+        supabaseEvents.push({
+          id: "supabase-hero",
+          title: "Galerie Hero",
+          category: "Photo Hero",
+          location: "Lomé, Togo",
+          date: "2025",
+          description: "Photographies mise en avant en page d'accueil.",
+          cover: heroList[0].url,
+          featured: false,
+          media: heroList.map((i, idx) => ({
+            id: String(i.id || `hero-${idx}`),
+            kind: "photo",
+            src: i.url,
+            caption: i.public_id || `Photo Hero ${idx + 1}`,
+          })),
+        });
+      }
+
+      setEvents([...supabaseEvents, ...localList]);
+    }
+
+    loadAll();
+
     const ctx = gsap.context(() => {
       gsap.utils.toArray<HTMLElement>("[data-work-card]").forEach((el, i) => {
         gsap.fromTo(
@@ -63,6 +171,7 @@ export default function Works() {
       ctx.revert();
     };
   }, []);
+
 
   useEffect(() => {
     document.body.style.overflow = active ? "hidden" : "";

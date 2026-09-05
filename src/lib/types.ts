@@ -10,6 +10,16 @@ export type Category =
 
 export type MediaKind = "photo" | "video";
 
+export type PortfolioSection = "hero" | "shorts_reels" | "video" | "celebrite";
+
+export interface PortfolioItem {
+  id: string | number;
+  section: PortfolioSection;
+  url: string;
+  public_id: string;
+  created_at?: string;
+}
+
 export interface EventMedia {
   id: string;
   kind: MediaKind;
