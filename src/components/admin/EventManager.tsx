@@ -16,11 +16,10 @@ import {
   EyeOff,
 } from "lucide-react";
 import {
-  createEvent,
+  publishEvent,
   deleteEvent,
   createEventId,
 } from "@/lib/store";
-import { uploadMediaToCloudinary } from "@/lib/cloudinary";
 import { CATEGORIES } from "@/lib/types";
 import type { EventItem, EventMedia, Category } from "@/lib/types";
 
@@ -40,7 +39,7 @@ export default function EventManager({
         <div>
           <h3 className="font-display text-lg font-bold">Gestion des événements</h3>
           <p className="text-sm text-dim">
-            Crée un événement, ajoute des photos/vidéos (Cloudinary 'charlie') : tout est enregistré dans Supabase.
+            Crée un événement, prévisualise les médias et publie directement dans Supabase.
           </p>
         </div>
         <button
@@ -96,7 +95,7 @@ export default function EventManager({
                 </button>
                 <button
                   onClick={async () => {
-                    if (confirm(`Supprimer « ${event.title} » et ses médias de Supabase ?`)) {
+                    if (confirm(`Supprimer « ${event.title} » et ses médias dans Supabase Storage & DB ?`)) {
                       await deleteEvent(event.id);
                       bump();
                     }
@@ -153,9 +152,7 @@ function EventEditor({
   bump: () => void;
 }) {
   const [draft, setDraft] = useState<EventItem>(event);
-  const [uploadedMedias, setUploadedMedias] = useState<
-    { url: string; publicId: string; kind: "photo" | "video" }[]
-  >([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadStatus, setUploadStatus] = useState<{
     isUploading: boolean;
     currentFile: string;
@@ -173,70 +170,74 @@ function EventEditor({
 
   const set = (patch: Partial<EventItem>) => setDraft((d) => ({ ...d, ...patch }));
 
+  /**
+   * Sélection des fichiers : prévisualisation locale instantanée & compression d'image client
+   */
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const fileArray = Array.from(files);
-    const newUploaded: { url: string; publicId: string; kind: "photo" | "video" }[] = [...uploadedMedias];
-    const newMediaItems: EventMedia[] = [];
+    const newPending: File[] = [...pendingFiles];
+    const previewItems: EventMedia[] = [];
 
     for (let i = 0; i < fileArray.length; i++) {
       const file = fileArray[i];
-      setUploadStatus({
-        isUploading: true,
-        currentFile: file.name,
-        message: `Téléversement Cloudinary (preset 'charlie') (${i + 1}/${fileArray.length})...`,
-        percent: Math.round(((i + 0.1) / fileArray.length) * 100),
-        error: "",
-      });
+      let processedFile = file;
 
-      try {
-        const result = await uploadMediaToCloudinary(file, (st) => {
-          const stepPercent = Math.round(
-            ((i + (st.progressPercent ? st.progressPercent / 100 : 0.5)) / fileArray.length) * 100
-          );
-          setUploadStatus({
-            isUploading: true,
-            currentFile: file.name,
-            message: st.message,
-            percent: Math.min(100, stepPercent),
-            error: "",
-          });
+      if (file.type.startsWith("image/")) {
+        setUploadStatus({
+          isUploading: true,
+          currentFile: file.name,
+          message: `Compression rapide client de "${file.name}"...`,
+          percent: 20,
+          error: "",
         });
 
-        const item = {
-          url: result.url,
-          publicId: result.publicId,
-          kind: result.kind,
-        };
-
-        newUploaded.push(item);
-        newMediaItems.push({
-          id: result.publicId || `med-${Date.now()}-${i}`,
-          kind: result.kind,
-          src: result.url,
-          public_id: result.publicId,
-          caption: file.name,
-        });
-      } catch (err: any) {
-        console.error("Erreur d'envoi Cloudinary:", err?.message || err);
-        setUploadStatus((prev) => ({
-          ...prev,
-          error: `Échec d'envoi pour "${file.name}": ${err?.message || "Vérifie le réseau"}`,
-        }));
+        try {
+          const imageCompressionModule = await import("browser-image-compression");
+          const imageCompression = imageCompressionModule.default || imageCompressionModule;
+          const options = {
+            maxSizeMB: 1.5,
+            maxWidthOrHeight: 2560,
+            fileType: "image/webp",
+            initialQuality: 0.85,
+            useWebWorker: true,
+          };
+          const compressedBlob = await imageCompression(file, options);
+          const webpName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
+          processedFile = new File([compressedBlob], webpName, { type: "image/webp" });
+        } catch (err) {
+          console.warn("Erreur compression image, utilisation du fichier original:", err);
+          processedFile = file;
+        }
       }
+
+      newPending.push(processedFile);
+      const localUrl = URL.createObjectURL(processedFile);
+
+      previewItems.push({
+        id: `prev-${Date.now()}-${i}`,
+        kind: processedFile.type.startsWith("video") ? "video" : "photo",
+        src: localUrl,
+        caption: processedFile.name,
+      });
     }
 
-    setUploadedMedias(newUploaded);
-    setDraft((d) => ({
-      ...d,
-      media: [...d.media, ...newMediaItems],
-      cover: d.cover || newMediaItems.find((m) => m.kind === "photo")?.src || newMediaItems[0]?.src || "",
-    }));
+    setPendingFiles(newPending);
+    setDraft((d) => {
+      const updatedMedia = [...d.media, ...previewItems];
+      const firstPhoto = updatedMedia.find((m) => m.kind === "photo")?.src;
+      const firstMedia = updatedMedia[0]?.src;
+      return {
+        ...d,
+        media: updatedMedia,
+        cover: d.cover || firstPhoto || firstMedia || "",
+      };
+    });
 
     setUploadStatus({
       isUploading: false,
       currentFile: "",
-      message: `${newMediaItems.length} média(s) téléversé(s) sur Cloudinary avec succès !`,
+      message: `${fileArray.length} média(s) prêt(s) pour la publication Supabase !`,
       percent: 100,
       error: "",
     });
@@ -259,58 +260,55 @@ function EventEditor({
 
   const pickCover = (src: string) => set({ cover: src });
 
+  /**
+   * Clic sur "Publier l'événement" / "Enregistrer" : téléversement Supabase Storage 'portfolio-media' & insertion DB
+   */
   const save = async () => {
     if (!draft.title.trim()) {
-      setUploadStatus((prev) => ({ ...prev, error: "Veuillez entrer un titre pour l'événement." }));
+      setUploadStatus((prev) => ({ ...prev, error: "Veuillez préciser un titre pour l'événement." }));
       return;
     }
 
     setUploadStatus({
       isUploading: true,
       currentFile: "",
-      message: "Enregistrement dans Supabase (tables 'events' & 'event_media')...",
-      percent: 30,
+      message: "Publication vers Supabase Storage & DB...",
+      percent: 15,
       error: "",
     });
 
     try {
-      // Insertion des médias déjà existants + nouveaux médias téléversés
-      const allMediasToSave: { url: string; publicId: string; kind: "photo" | "video" }[] = [
-        ...uploadedMedias,
-      ];
-
-      // Inclure les médias existants de l'événement s'ils ne sont pas déjà présents
-      draft.media.forEach((m) => {
-        if (m.src && !allMediasToSave.some((u) => u.url === m.src)) {
-          allMediasToSave.push({
-            url: m.src,
-            publicId: m.public_id || m.id || "",
-            kind: m.kind,
-          });
-        }
-      });
-
-      const res = await createEvent(
+      const res = await publishEvent(
         {
           title: draft.title,
           category: draft.category,
           location: draft.location,
           date: draft.date,
           description: draft.description,
-          cover: draft.cover,
+          cover_url: draft.cover,
           featured: draft.featured,
         },
-        allMediasToSave
+        pendingFiles,
+        (msg, percent) => {
+          setUploadStatus({
+            isUploading: true,
+            currentFile: "",
+            message: msg,
+            percent: percent,
+            error: "",
+          });
+        }
       );
 
       if (res.success) {
         setUploadStatus({
           isUploading: false,
           currentFile: "",
-          message: "Événement et médias enregistrés dans Supabase avec succès !",
+          message: "Événement publié et sauvegardé avec succès dans Supabase !",
           percent: 100,
           error: "",
         });
+        setPendingFiles([]);
         onSave();
       } else {
         const errMsg = res.error || "Erreur Supabase";
@@ -427,7 +425,7 @@ function EventEditor({
                   <Loader2 className="h-5 w-5 animate-spin text-accent shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between text-xs font-bold text-accent">
-                      <span className="truncate">{uploadStatus.currentFile || "Téléversement en cours..."}</span>
+                      <span className="truncate">{uploadStatus.currentFile || "Envoi Supabase Storage..."}</span>
                       <span>{uploadStatus.percent}%</span>
                     </div>
                     <p className="mt-1 text-xs text-foreground/90 leading-tight">{uploadStatus.message}</p>

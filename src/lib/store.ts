@@ -4,7 +4,7 @@ import { ADMIN_CODE } from "./content";
 import type { EventItem, EventMedia, QuoteRequest } from "./types";
 import {
   fetchEventsFromSupabase,
-  createEventInSupabase,
+  publishEventToSupabase,
   deleteEventFromSupabase,
 } from "./supabase";
 
@@ -42,26 +42,26 @@ export async function getEvents(): Promise<EventItem[]> {
 }
 
 /**
- * Création d'un événement et de ses médias dans Supabase avec gestion try/catch et logs d'erreurs
+ * Publication d'un événement et de ses fichiers dans Supabase Storage 'portfolio-media' et DB ('events' & 'event_media')
  */
-export async function createEvent(
+export async function publishEvent(
   eventData: {
-    id?: string;
     title: string;
     category: string;
     location: string;
     date: string;
     description: string;
-    cover?: string;
+    cover_url?: string;
     featured?: boolean;
   },
-  mediaList: { url: string; publicId: string; kind: "photo" | "video" }[]
+  filesToUpload: File[],
+  onProgress?: (msg: string, percent: number) => void
 ) {
-  return await createEventInSupabase(eventData, mediaList);
+  return await publishEventToSupabase(eventData, filesToUpload, onProgress);
 }
 
 /**
- * Supprime un événement et ses médias associés dans Supabase
+ * Supprime un événement et ses fichiers dans Supabase Storage ('portfolio-media') et DB ('events')
  */
 export async function deleteEvent(id: string): Promise<boolean> {
   return await deleteEventFromSupabase(id);
